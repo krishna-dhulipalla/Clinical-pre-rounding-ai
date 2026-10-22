@@ -1,14 +1,21 @@
 # Rounds — Clinical Change Intelligence Workbench
 
-An evidence-first clinical AI engineering demonstration: review what changed within a patient encounter, inspect exact FHIR source versions, and accept a clinician-reviewed handoff.
+Rounds is an evidence-first clinical review application built on FHIR. It organizes patient records into encounter-specific briefings, highlights changes across a review window, and connects each statement to its supporting evidence. Clinicians can inspect source records, prepare handoffs, and retain a versioned review history.
 
-V2 adds a React/TypeScript workspace, FastAPI service, durable jobs, reproducible evidence snapshots, deterministic change calculations, optional LLM prioritization, review revisions, evaluation reports, and operational telemetry. The original Streamlit prototype remains available.
+The application combines a React/TypeScript workspace, a Python/FastAPI service, durable background jobs, and optional LLM prioritization. A Streamlit interface provides clinical summarization, evidence exploration, audit history, and feedback.
 
-![V2 review workspace showing a synthetic patient's changes and exact FHIR source evidence](docs/images/workbench-v2.png)
+![Rounds workspace showing clinical changes and their supporting FHIR source records](docs/images/workbench-v2.png)
 
-**Use synthetic data for the demonstration.** The implemented controls demonstrate engineering behavior; they do not establish clinical validity, regulatory approval, or deployment readiness for real patient care.
+## Capabilities
 
-## Run v2
+- **Encounter-based review:** Explicit UTC review windows, comparable lab and vital changes, corrected-result handling, and data freshness indicators.
+- **Traceable evidence:** Saved FHIR resource versions, value paths, content fingerprints, and source inspection alongside briefing statements.
+- **Verified briefings:** Deterministic calculations and claim checks, with explicit abstention when required retrieval or event-time coverage is incomplete.
+- **Clinician review:** Editable handoff selection, clinician-authored notes, draft and accepted revisions, and concurrency protection.
+- **FHIR integration:** Scoped service access and SMART sandbox launch with PKCE, encrypted token storage, and patient/encounter context binding.
+- **Evaluation and operations:** Reproducible synthetic scenarios, access events, job recovery, processing latency, token usage, and configurable model-cost estimates.
+
+## Getting started
 
 Requirements: Python 3.11+, [uv](https://docs.astral.sh/uv/), and Node.js 22.14+.
 
@@ -19,33 +26,32 @@ npm --prefix web run build
 uv run python scripts/run_workbench.py serve
 ```
 
-Open [localhost:8000](http://localhost:8000) and choose **Open synthetic workspace**. The default demo uses SQLite and bundled synthetic FHIR resources, with no Docker, hosted-model call, or API key required.
+Open [localhost:8000](http://localhost:8000) and choose **Open synthetic workspace**. The local demonstration uses SQLite and bundled synthetic FHIR resources. Docker and an API key are optional.
 
-If port 8000 is occupied, match the configured public origin to your chosen port:
+Configuration is loaded from the repository's `.env`; process environment variables take precedence. See [.env.example](.env.example). The workbench uses `WORKBENCH_DATABASE_URL` and initializes its schema automatically in demo mode.
+
+To use another port, set the matching browser origin:
 
 ```powershell
 $env:WORKBENCH_PUBLIC_URL = "http://localhost:8012"
 uv run python scripts/run_workbench.py serve --port 8012
 ```
 
-Configuration is loaded from the repository's `.env`, with process environment variables taking precedence. See [.env.example](.env.example). The v2 database uses `WORKBENCH_DATABASE_URL`; the v1 `DATABASE_URL` is separate. V2 demo mode migrates its own schema on startup.
+## Review workflow
 
-## Demonstration workflow
+1. Select a patient, encounter, and review window.
+2. Generate a briefing and review the recorded changes.
+3. Open a statement's source to inspect its FHIR record, version, and value path.
+4. Review retrieval coverage and any stale, corrected, or unavailable data.
+5. Select statements for the handoff, add a clinician note, and save or accept the review.
 
-1. Select **Avery Morgan** and generate a briefing. Review two exact lab deltas and the corrected-result warning.
-2. Open **Previous**, **Current**, or **Source** beside a statement to inspect the saved FHIR JSON, resource version, value path, and SHA-256 fingerprint.
-3. Open **Handoff & revisions**, add a clinician note, save a draft, and accept the handoff. Every revision records the reviewer, selected claims, and evidence snapshot hash.
-4. Select **Jordan Lee**, open the demo controls, and simulate an observation outage or access denial. The briefing is withheld and the manifest distinguishes unavailable, denied, empty, and unqueried sources.
-5. Select **Riley Chen** to inspect stale evidence and unknown event timestamps.
-6. Open **Evaluation** for versioned synthetic scenarios, then **Operations** for run status, processing latency, token use, estimated cost, and access/review events.
+Saved briefings and review revisions can be reopened after a restart. The synthetic workspace uses a fixed replay clock to keep demonstrations reproducible and includes scenarios for retrieval outages, access denial, and missing timestamps.
 
-The fixed replay clock is October 22, 2026, 14:00 UTC. Window controls are explicitly UTC; the demo stays reproducible as the real date changes. Completed runs and review revisions survive process restarts and can be reopened from Recent briefings.
+## AI and evidence verification
 
-## What the AI does
+The workbench normalizes source evidence, computes compatible changes, and renders factual claims in code. An optional LLM prioritizes the complete claim set using opaque identifiers. Invalid, incomplete, or unsupported rankings fall back to the deterministic briefing.
 
-Code normalizes evidence, computes compatible changes, and renders factual claims. The optional model prioritizes those claims by returning an ordered list of their opaque IDs. It cannot rewrite clinical values or introduce new claims; invalid, omitted, duplicated, refused, or truncated rankings fall back to the complete deterministic briefing.
-
-To enable hosted ranking, set:
+Enable hosted prioritization through the environment:
 
 ```ini
 WORKBENCH_HOSTED_LLM=true
@@ -53,61 +59,65 @@ OPENAI_API_KEY=your-key
 WORKBENCH_MODEL=gpt-4o-mini
 ```
 
-The ranking request includes controlled measurement labels, opaque claim IDs, claim types, and relative timing. It excludes raw FHIR JSON, free-text source labels, patient names/IDs, resource IDs, and absolute dates. This is data minimization, not a general de-identification certification. Assess the deployment boundary before connecting real records.
+Model-facing ranking input contains controlled measurement labels, opaque claim IDs, claim types, and relative timing. It excludes raw FHIR JSON, free-text source labels, patient identifiers, resource IDs, and absolute dates. Clinician notes remain explicitly human-authored and are not automatically verified.
 
-Optional `WORKBENCH_INPUT_USD_PER_MILLION` and `WORKBENCH_OUTPUT_USD_PER_MILLION` values enable estimated model cost. Prices are operator-supplied; provider billing and hosting costs are not inferred.
+Optional `WORKBENCH_INPUT_USD_PER_MILLION` and `WORKBENCH_OUTPUT_USD_PER_MILLION` settings enable model-cost estimates using operator-supplied rates.
 
-## Verification
+## Streamlit interface
+
+The Streamlit interface uses the pipeline in `src/main.py` and the FHIR/PostgreSQL services in `docker-compose.yml`. Install `requirements.txt`, configure `.env`, then run:
+
+```powershell
+docker compose up -d
+python scripts/init_db.py
+python scripts/load_synthea.py
+streamlit run src/ui/app.py
+```
+
+Its audit database is configured through `DATABASE_URL`. This interface uses prompt-based citations and basic regex redaction; deterministic claim verification and review snapshots are provided by the React workbench.
+
+## Testing and evaluation
 
 ```powershell
 uv run pytest -q
-uv run ruff check src/workbench tests/test_workbench*.py
+uv run ruff check src/workbench
 uv run python scripts/run_workbench.py evaluate --output output/evaluation.json
 ```
 
-On PowerShell, if a tool does not expand the test wildcard, pass the specific filenames or use `uv run ruff check src/workbench`.
+Evaluation reports include scenario expectations, metric numerators and denominators, pipeline and dataset versions, and known limitations. Use `--baseline output/baseline.json` to compare reports. The evaluation command exits nonzero when an expected scenario fails.
 
-The evaluation command exits nonzero when an expected fixture fails. Compare versioned report artifacts with `--baseline output/baseline.json`. Reports expose metric numerators, denominators, fixture expectations, versions, and limitations. The bundled cases test engineering properties, not medical accuracy or LLM prioritization quality.
+Tests cover retrieval boundaries, quantities, source integrity, missing data, model fallback, job recovery, cancellation, review conflicts, authorization, SMART state/PKCE, retention, and the Streamlit pipeline. PostgreSQL integration tests require a disposable `WORKBENCH_TEST_POSTGRES_URL` ending in `_test`; CI provides this database.
 
-The test suite covers the v1 regression checks and v2 retrieval boundaries, exact quantities, source tampering, missingness, idempotency, cancellation, worker recovery, review conflicts, authorization, model fallback, SMART state/PKCE, and retention. The PostgreSQL integration check requires a disposable `WORKBENCH_TEST_POSTGRES_URL` ending in `_test`; CI supplies it.
-
-## Deploy the synthetic demo
+## Deployment
 
 ```powershell
 docker compose -f compose.v2.yml up --build -d
 ```
 
-This starts PostgreSQL, a non-root API/web container, and a separate durable-job worker. Ports bind to localhost. The sample credentials are for local synthetic use. Python and frontend dependencies are locked in `uv.lock` and `web/package-lock.json`.
+The workbench deployment starts PostgreSQL, a non-root API/web container, and a separate job worker. Ports bind to localhost, and the included credentials are intended for local synthetic use. Dependencies are locked in `uv.lock` and `web/package-lock.json`.
 
-See [deployment and operations](docs/operations.md) for migrations, worker settings, retention, backup/rollback, and validation limits. Docker configuration validation alone does not confirm a successful container build or PostgreSQL run.
+See [deployment and operations](docs/operations.md) for migrations, worker configuration, retention, backups, and rollback. See [SMART setup](docs/smart_on_fhir_setup.md) for sandbox registration and scoped FHIR access.
 
-## FHIR and SMART integration
-
-V2 supports scoped service-token API access and a browser-bound SMART sandbox flow with pinned endpoints, PKCE, expiring sessions, encrypted upstream token storage, and patient/encounter context binding. See [SMART setup](docs/smart_on_fhir_setup.md).
-
-SMART actors are identified as authorized launch sessions. Named clinician identity federation, enterprise role management, refresh-token rotation, and multi-organization tenancy remain separate integration work. This repository does not claim HIPAA compliance or clinical production certification.
-
-## Implementation
+## Architecture
 
 ```text
 web/                    React/TypeScript review workspace
-src/workbench/
-  api.py                Authenticated API and static web serving
-  sources.py            Synthetic replay and scoped FHIR adapters
-  normalization.py      Typed evidence extraction and provenance
-  pipeline.py           Temporal deltas, claim templates, verification
-  generation.py         Optional bounded LLM ranking
-  persistence.py        Runs, snapshots, revisions, sessions, access events
-  worker.py             Durable jobs, leases, recovery, cancellation
-  security.py, smart.py  Session and SMART sandbox controls
-  evaluation.py         Versioned synthetic evaluation
-  maintenance.py        Explicit retention preview/purge
-migrations/             Versioned v2 database schema
-scripts/run_workbench.py Local entry point
+src/workbench/          API, evidence processing, claim verification, jobs, and review
+src/fhir/               FHIR HTTP client and paginated retrieval
+src/ingestion/          Fact extraction and normalization for summarization
+src/llm/                Summarization client and prompts
+src/redaction/          Basic regex redaction
+src/db/                 Summarization audit records and feedback
+src/ui/                 Streamlit interface
+migrations/             Workbench database migrations
+data/                   Synthetic records and evaluation fixtures
+tests/                  Application regression and integration checks
 ```
 
-See [architecture](docs/architecture.md), [v2 implementation status](docs/v2_status.md), and the [original proposal](docs/v2_proposal.md).
+Read the [architecture documentation](docs/architecture.md) for data flow and verification boundaries.
 
-## Original Streamlit prototype
+## Scope and limitations
 
-The original pipeline remains in `src/main.py`, with its UI at `src/ui/app.py`. Use `pip install -r requirements.txt`, the original `docker-compose.yml`, `python scripts/init_db.py`, and `python scripts/load_synthea.py`, then run `streamlit run src/ui/app.py`. Its prompt-based citations and regex redaction do not have the v2 verification boundary. Prefer v2 for the evidence/review demonstration.
+Rounds is intended for synthetic-data demonstrations and sandbox evaluation. Source agreement and passing engineering tests do not establish medical accuracy, clinical efficacy, regulatory approval, or readiness for patient care.
+
+Named clinician identity federation, enterprise authorization, deployment-specific privacy controls, and clinical validation require additional work. Data minimization and basic regex redaction do not constitute complete de-identification. The application does not claim HIPAA compliance or autonomous clinical decision-making.

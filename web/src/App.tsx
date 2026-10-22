@@ -414,7 +414,7 @@ export default function App() {
       <main className="login-screen">
         <div className="login-mark">
           <Icon name="pulse" size={30} />
-          Rounds<span>V2</span>
+          Rounds
         </div>
         <div className="login-content">
           <p className="eyebrow">CLINICAL CHANGE INTELLIGENCE</p>
@@ -462,7 +462,6 @@ export default function App() {
         <div className="brand">
           <Icon name="pulse" size={25} />
           <strong>Rounds</strong>
-          <span>02</span>
         </div>
         <p className="brand-sub">Clinical change workbench</p>
         <nav aria-label="Main navigation">
@@ -570,7 +569,6 @@ export default function App() {
             {config.demo_clock
               ? "Replay · " + dateTime(config.demo_clock)
               : "Live FHIR context"}
-            <span className="version">v2.0</span>
           </div>
         </header>
         <main className="workspace">
@@ -1467,7 +1465,7 @@ export default function App() {
             Clinician review required · Clinical validity has not been
             established
           </span>
-          <span>Rounds / 02</span>
+          <span>Rounds</span>
         </footer>
       </div>
     </div>
