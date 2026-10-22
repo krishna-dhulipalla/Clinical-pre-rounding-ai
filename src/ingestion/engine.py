@@ -1,5 +1,5 @@
 from typing import List
-from datetime import datetime
+from datetime import datetime, timezone
 from fhir.client import FHIRClient
 from .models import Fact, FactType
 from .converter import entry_to_facts
@@ -59,7 +59,7 @@ class FactTableBuilder:
             # For this MVP, let's append them as "System" facts.
             facts.insert(0, Fact(
                 patient_id=patient_id,
-                timestamp=datetime.now(),
+                timestamp=datetime.now(timezone.utc),
                 type=FactType.OTHER,
                 name="Data Quality Warning",
                 value=w,
@@ -75,6 +75,6 @@ class FactTableBuilder:
         med_admins = [f for f in facts if f.type == FactType.MED_ADMIN]
         
         if med_orders and not med_admins:
-            warnings.append(f"Found {len(med_orders)} medication orders but 0 administrations in this window.")
+            warnings.append("Medication administrations are not retrieved by this prototype; administration status is unknown.")
             
         return warnings

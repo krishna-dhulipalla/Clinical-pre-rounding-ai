@@ -1,12 +1,13 @@
 import sys
 import os
 import json
-sys.path.append(os.path.abspath("src"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src")))
 
 from db.database import SessionLocal
 from db.models import AuditLog
 from eval.judge import LLMJudge
 from sqlalchemy import desc
+from redaction.engine import Redactor
 
 def run_evaluation(limit: int = 5):
     db = SessionLocal()
@@ -27,9 +28,10 @@ def run_evaluation(limit: int = 5):
         for log in logs:
             print(f"--- Evaluating Log ID: {log.id} ---")
             # Reconstruct facts text from JSON
-            facts_text = json.dumps(log.facts_json, indent=2)
+            redactor = Redactor()
+            facts_text = redactor.redact(json.dumps(log.facts_json, indent=2))
             
-            result = judge.evaluate(facts_text, log.summary_text)
+            result = judge.evaluate(facts_text, redactor.redact(log.summary_text))
             
             score = result.get("score", 0)
             total_score += score

@@ -1,194 +1,93 @@
-# 🏥 Pre-Rounding Assistant
+# Pre-Rounding Assistant
 
-**A Grounded, Evidence-Based Clinical Summarization Tool powered by FHIR and LLMs.**
+A clinical summarization prototype that turns FHIR R4 records into a cited patient summary, with an evidence explorer, audit history, and clinician feedback.
 
-The **Pre-Rounding Assistant** helps clinicians quickly review patient data by generating concise, accurate summaries from FHIR records. Unlike generic chatbots, this system is **grounded**: every claim in the summary is cited with a link back to the original clinical fact (Lab, Vital, Medication). **This means: zero hallucination, full audit trail, and trust in clinical accuracy.**
+The current app uses Python, Streamlit, PostgreSQL, a HAPI FHIR server, and an OpenAI model. It is intended for demonstrations with synthetic records. Citations and regex redaction are useful controls, but do not establish clinical accuracy, complete de-identification, or production readiness.
 
-![Status](https://img.shields.io/badge/Status-Prototype-blue)
-![Tech](https://img.shields.io/badge/Built%20With-Python%20|%20Streamlit%20|%20PostgreSQL%20|%20FHIR%20|%20OpenAI-green)
+## What it does
 
----
+1. Select a patient from the local FHIR server.
+2. Retrieve encounters, laboratory observations, vital signs, and medication requests, following search pagination.
+3. Flatten supported fields into timestamped facts, including observation components such as systolic and diastolic blood pressure.
+4. Apply basic regex redaction and ask an LLM to summarize the facts with source citation tokens.
+5. Display the summary, fact timeline, heuristic findings, and searchable evidence.
+6. Store facts and the summary in an audit table and accept accurate/incorrect feedback.
 
-## 💡 Use Case Example
+Model failures and incomplete retrieval are surfaced as errors. Audit failures are displayed separately. Selecting a different patient clears the previous summary.
 
-**Scenario**: Dr. Smith needs to pre-round on 15 patients in 30 minutes.
+## Run locally
 
-**Without this tool**: She manually clicks through each patient's EHR, reviewing 20+ tabs per patient (Labs, Vitals, Meds, Notes). Takes 2-3 minutes per patient.
+Prerequisites: Python 3.10+, Docker Compose, and an OpenAI API key.
 
-**With this tool**:
-
-1. Opens the assistant
-2. Selects patient ID
-3. Gets a 200-word summary: "Since yesterday, creatinine rose from 1.2→1.8 [[Lab/456]], BP stable at 120/80 [[Vital/789]], added Lisinopril 10mg [[Med/234]]"
-4. Reviews summary in 15 seconds, clicks citations if needed
-
-**Time saved**: 2.5 minutes per patient × 15 patients = **37 minutes saved** every morning.
-
-## ✨ Key Features
-
-- **Grounded Summaries**: Uses a deterministic "Fact Table" approach to ensure LLM outputs are faithful to the data.
-- **Strict Citations**: Every sentence includes a click-to-verify citation (e.g., `[[Observation/123]]`).
-- **Privacy First (PHI Redaction)**: Built-in `Redactor` middleware scrubs names and dates _before_ sending data to the LLM.
-- **Audit Logging**: Every request, fact table, and summary is logged to PostgreSQL for compliance.
-- **Human-in-the-Loop Feedback**: Clinicians can rate summaries ("Good" vs "Incorrect") directly in the UI.
-- **Automated Evaluation**: Includes an "LLM-as-a-Judge" script to score groundedness and hallucination rates.
-
-## 🎯 Why This Matters
-
-In clinical settings, **accuracy is non-negotiable**. Generic LLM chatbots can hallucinate medication names, misreport lab values, or fabricate patient history—all potentially dangerous.
-
-This assistant solves that by:
-
-- ✅ Using a **deterministic fact table** that captures only what's in the FHIR records
-- ✅ Forcing the LLM to **cite every claim** with a verifiable source
-- ✅ **Logging everything** for compliance and audit trails
-- ✅ Implementing **PHI redaction** to protect patient privacy
-
-**Result**: Summaries that are fast, accurate, and safe enough for real clinical consideration.
-
-## 🏗️ Architecture
-
-1.  **Ingestion**: Fetches raw JSON resources (Encounters, Observations, Meds) from a **HAPI FHIR** server.
-2.  **Processing**: Flattens resources into a temporal `FactTable`, normalizing units and detecting data gaps.
-3.  **Redaction**: Regex-based middleware replaces PHI (names, dates, MRNs) with deterministic tokens before LLM processing, ensuring no sensitive data leaves the system boundary.
-4.  **Inference**: Sends the redacted fact table to **OpenAI GPT-4o** with a strict system prompt.
-5.  **UI**: A **Streamlit** dashboard displays the summary alongside a searchable "Evidence Explorer".
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-
-- **Docker & Docker Compose** (for FHIR Server & Postgres)
-- **Python 3.9+**
-- **OpenAI API Key**
-
-### 1. Installation
-
-Clone the repository:
-
-```bash
-git clone https://github.com/krishna-dhulipalla/Clinical-pre-rounding-ai.git
-cd Clinical-pre-rounding-ai
-```
-
-Install Python dependencies:
-
-```bash
+```powershell
+python -m venv .venv
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
+Copy-Item .env.example .env
 ```
 
-### 2. Infrastructure Setup
-
-Start the local FHIR server (HAPI) and Database (Postgres):
-
-```bash
-docker-compose up -d
-```
-
-_Wait ~30 seconds for the containers to initialize._
-
-### 3. Configuration
-
-Copy the example environment file:
-
-```bash
-cp .env.example .env
-```
-
-Edit `.env` and add your OpenAI API Key:
+Edit `.env`:
 
 ```ini
-OPENAI_API_KEY=sk-your-key-here
+OPENAI_API_KEY=your-key
 DATABASE_URL=postgresql://admin:admin@localhost:5432/fhir_rag_audit
 FHIR_BASE_URL=http://localhost:8080/fhir
 ```
 
-### 4. Load Synthetic Data
+The app and scripts load the repository's `.env`; existing process environment variables take precedence.
 
-Since the local FHIR server is empty, load the sample Synthea data:
-
-```bash
-python scripts/load_synthea.py
+```powershell
+docker compose up -d
 ```
 
-_This script uploads a sample patient bundle (`data/patient_bundle_1.json`) to the FHIR server._
+Wait for PostgreSQL and HAPI FHIR to accept connections, then initialize the audit table and load the included synthetic bundle:
 
----
-
-## 🖥️ Usage
-
-Run the User Interface:
-
-```bash
+```powershell
+python scripts/init_db.py
+python scripts/load_synthea.py
 streamlit run src/ui/app.py
 ```
 
-Open your browser to `http://localhost:8501`.
+Open [the local app](http://localhost:8501).
 
-1.  **Select Patient**: Choose a patient from the dropdown (defaults to the synthetic patient).
-2.  **Generate Summary**: Click the red button.
-3.  **Review**:
-    - **Summary Tab**: Read the clinical narrative. Hover over citations `[[...]]`.
-    - **Triage Board**: See critical/high priority labs instantly.
-    - **Evidence Explorer**: Filter and search the raw facts used to generate the summary.
-4.  **Feedback**: Rate the summary in the "Audit and Feedback" tab.
+## Verification and evaluation
 
----
-
-## 🛠️ Developer Tools
-
-### Run Automated Evaluation
-
-Score the quality of your recent summaries using the LLM-as-a-Judge:
-
-```bash
+```powershell
+python -m pytest tests/ -q
 python scripts/run_eval.py
 ```
 
-### Run Unit Tests
+Tests use mocked FHIR/model responses and an isolated in-memory database. They do not require API calls, Docker, or an application database. They exercise retrieval failures, pagination, date handling, observation components, generation failures, audit/feedback, regex redaction, unit-aware demo heuristics, and patient switching in Streamlit.
 
-Verify the Redaction and Logic components:
+The evaluation script sends recent stored facts and summaries through basic regex redaction to a hosted LLM judge. Use synthetic data only. Its scores are advisory and are not an independent clinical validation.
 
-```bash
-pytest tests/
-# or specific tests
-python tests/test_redaction.py
-python tests/test_audit_log.py
-```
+## Current limits
 
----
+- Retrieval has no encounter or 24–48-hour filter. Old records can appear; no freshness guarantee is made.
+- Only a subset of FHIR fields and resource types is supported. Medication administrations, diagnoses, allergies, notes, and dosage extraction are not implemented.
+- Citation tokens are requested through prompting. Their existence and whether they support each claim are not automatically enforced; tokens are not clickable evidence links yet.
+- Evidence Explorer shows normalized facts, rather than the original FHIR resource JSON.
+- Triage thresholds are unvalidated demo heuristics. Unsupported units are marked for review instead of being compared with incompatible thresholds.
+- Regex redaction handles a known full name, selected date formats, and selected phone formats. It preserves citation IDs, does not fully de-identify records, and does not implement a general MRN/PHI detector. Redacting dates also limits temporal interpretation.
+- Audit records contain original facts, patient IDs, and generated text. Authentication, role-based access, encryption policy, retention controls, and deployment monitoring are not implemented.
+- SMART on FHIR is a future integration, described only in a setup sketch. The local FHIR server has no application authorization.
 
-## 📂 Project Structure
+## Project layout
 
 ```text
-├── data/                 # Synthetic FHIR bundles
-├── docs/                 # Documentation (Architecture, Epics)
-├── scripts/
-│   ├── load_synthea.py   # Data loader
-│   └── run_eval.py       # Offline evaluation script
-├── src/
-│   ├── db/               # Database models & Feedback logic
-│   ├── eval/             # LLM Judge logic
-│   ├── fhir/             # FHIR API Client
-│   ├── ingestion/        # Fact Table Engine & Normalization
-│   ├── llm/              # Prompts & OpenAI Client
-│   ├── redaction/        # Privacy Middleware
-│   ├── ui/               # Streamlit App
-│   └── main.py           # Core pipeline orchestration
-├── tests/                # Unit tests
-├── docker-compose.yml    # Infrastructure
-└── requirements.txt      # Python dependencies
+src/
+  fhir/          FHIR HTTP client and paginated searches
+  ingestion/     Fact models, conversion, unit normalization, timeline assembly
+  redaction/     Basic regex redaction
+  llm/           Model client and summarization prompts
+  db/            Audit persistence and feedback
+  eval/          LLM judge
+  ui/            Streamlit app and demo triage rules
+  main.py        Summarization pipeline
+scripts/         Database initialization, synthetic-data loader, offline evaluation
+tests/           Isolated regression tests
+data/            Sample synthetic FHIR bundle
+docs/            Architecture and proposed next version
 ```
 
-## 🔒 Security Note
-
-This project is a **prototype**.
-
-- **PHI**: The `Redactor` is regex-based. For production, integrate a specialized NLP tool like Microsoft Presidio.
-- **Auth**: The local FHIR server is open. See `docs/smart_on_fhir_setup.md` for production OAuth2 integration.
-
----
-
-**License**: MIT
+See [current architecture](docs/architecture.md) and the [proposed v2: Clinical Change Intelligence Workbench](docs/v2_proposal.md) for the next development direction.

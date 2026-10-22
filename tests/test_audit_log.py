@@ -7,11 +7,11 @@ from db.models import AuditLog
 import uuid
 from datetime import datetime
 
-def test_audit_log_creation():
+def test_audit_log_creation(db_session_factory):
     # Ensure tables exist
     init_db()
     
-    db = SessionLocal()
+    db = db_session_factory()
     try:
         log_id = uuid.uuid4()
         entry = AuditLog(
@@ -30,10 +30,5 @@ def test_audit_log_creation():
         assert saved is not None
         assert saved.patient_id == "test-patient"
         print("Audit Log Test Passed!")
-    except Exception as e:
-        print(f"Audit Log Test Failed: {e}")
     finally:
         db.close()
-
-if __name__ == "__main__":
-    test_audit_log_creation()

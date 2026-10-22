@@ -1,5 +1,11 @@
 # Pre-Rounding Assistant - Project Overview
 
+This is the original design brief, not an implementation status report. See
+[current architecture](architecture.md) for implemented behavior and
+[the v2 proposal](v2_proposal.md) for the recommended next version. In particular,
+time-window filtering, enforced citations, raw evidence links, complete audit
+traces, and production privacy controls described below are not implemented.
+
 ## Vision
 
 A grounded, evidence-first clinical summarization system that connects to a local FHIR server, flattens patient data into a deterministic Fact Table, and uses an LLM strictly as a citation-backed summarizer. The goal is to reduce hallucination risks in healthcare AI by decoupling data retrieval/logic from text generation.

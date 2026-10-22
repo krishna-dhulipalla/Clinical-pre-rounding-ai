@@ -2,9 +2,9 @@ import logging
 import os
 import json
 from datetime import datetime
-from fhir.client import FHIRClient
+from fhir.client import FHIRClient, FHIRRequestError
 from ingestion.engine import FactTableBuilder
-from llm.client import LLMClient
+from llm.client import LLMClient, LLMGenerationError
 from llm.prompts import SYSTEM_PROMPT, USER_PROMPT_TEMPLATE
 from db.database import SessionLocal, init_db
 from db.models import AuditLog
@@ -29,21 +29,29 @@ def run_pipeline(patient_id: str, api_key: str = None):
     client = FHIRClient(base_url=get_fhir_base_url())
     
     # 1. Fetch Patient Details
-    patient = client.get_patient(patient_id)
+    try:
+        patient = client.get_patient(patient_id)
+    except FHIRRequestError as exc:
+        return {"error": str(exc)}
     if not patient:
         return {"error": f"Patient {patient_id} not found"}
         
     name = "Unknown"
-    if "name" in patient:
+    if patient.get("name"):
         family = patient["name"][0].get("family", "")
         given = " ".join(patient["name"][0].get("given", []))
-        name = f"{given} {family}"
+        name = f"{given} {family}".strip() or "Unknown"
             
-    logger.info(f"Generating Summary for Patient: {name} (ID: {patient_id})")
+    logger.info("Generating patient summary")
 
     # 2. Build Fact Table
     builder = FactTableBuilder(client)
-    facts = builder.build_fact_table(patient_id)
+    try:
+        facts = builder.build_fact_table(patient_id)
+    except FHIRRequestError as exc:
+        return {"error": str(exc)}
+    if not facts:
+        return {"error": "No supported clinical facts were found. A summary was not generated."}
     
     # Convert to Markdown
     facts_markdown = "\n".join([f.to_markdown() for f in facts])
@@ -67,13 +75,16 @@ def run_pipeline(patient_id: str, api_key: str = None):
     ]
 
     # 3. Generate Summary
-    llm = LLMClient(api_key=api_key)
-    # Use REDACTED markdown for the LLM
-    user_prompt = USER_PROMPT_TEMPLATE.format(facts_markdown=redacted_markdown) 
-    summary = llm.generate_summary(SYSTEM_PROMPT, user_prompt)
+    try:
+        llm = LLMClient(api_key=api_key)
+        user_prompt = USER_PROMPT_TEMPLATE.format(facts_markdown=redacted_markdown)
+        summary = llm.generate_summary(SYSTEM_PROMPT, user_prompt)
+    except LLMGenerationError as exc:
+        return {"error": str(exc)}
 
     # 4. Audit Log
     db = SessionLocal()
+    audit_warning = None
     try:
         audit_entry = AuditLog(
             patient_id=patient_id,
@@ -87,17 +98,22 @@ def run_pipeline(patient_id: str, api_key: str = None):
         db.refresh(audit_entry)
         audit_id = audit_entry.id
     except Exception as e:
-        logger.error(f"Failed to write audit log: {e}")
+        db.rollback()
+        logger.error("Failed to write audit log (%s)", type(e).__name__)
         audit_id = None
+        audit_warning = "Audit logging failed for this summary. Feedback cannot be saved."
     finally:
         db.close()
 
     return {
         "patient_name": name,
+        "patient_id": patient_id,
         "facts_markdown": facts_markdown,
+        "llm_facts_markdown": redacted_markdown,
         "facts_raw": facts,
         "summary": summary,
-        "audit_id": str(audit_id) if audit_id else None
+        "audit_id": str(audit_id) if audit_id else None,
+        "audit_warning": audit_warning,
     }
 
 def main():

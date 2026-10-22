@@ -3,6 +3,10 @@ import requests
 import json
 import logging
 from pathlib import Path
+from dotenv import load_dotenv
+
+ROOT = Path(__file__).resolve().parents[1]
+load_dotenv(ROOT / ".env")
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -29,7 +33,7 @@ def load_bundle(file_path: Path):
 
         # POST to the base URL (HAPI FHIR handles the transaction)
         headers = {"Content-Type": "application/fhir+json"}
-        response = requests.post(FHIR_SERVER_URL, json=bundle, headers=headers)
+        response = requests.post(FHIR_SERVER_URL, json=bundle, headers=headers, timeout=(5, 60))
         
         if response.status_code in [200, 201]:
             logger.info(f"Successfully loaded bundle: {file_path.name}")
@@ -43,7 +47,7 @@ def main():
     """
     Traverses a data directory and loads all .json files as FHIR Bundles.
     """
-    data_dir = Path("data")
+    data_dir = ROOT / "data"
     if not data_dir.exists():
         logger.warning(f"Data directory '{data_dir}' not found. Please create it and place Synthea bundles there.")
         return

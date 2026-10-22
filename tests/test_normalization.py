@@ -1,5 +1,5 @@
 import pytest
-from src.ingestion.normalization import normalize_unit
+from ingestion.normalization import normalize_unit
 
 def test_normalize_unit_noop():
     assert normalize_unit("13.5", "g/dL") == ("13.5", "g/dL")

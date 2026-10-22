@@ -1,5 +1,6 @@
 import sys
 import os
+import pytest
 sys.path.append(os.path.abspath("src"))
 from redaction.engine import Redactor
 
@@ -9,6 +10,15 @@ def test_redact_name():
     expected = "Patient [PATIENT_NAME] is 45 years old."
     result = r.redact(text)
     assert result == expected, f"Expected '{expected}', got '{result}'"
+
+@pytest.mark.parametrize("phone", ["(555) 123-4567", "555-123-4567", "+1 (555) 123-4567"])
+def test_redact_phone_formats(phone):
+    assert Redactor().redact(f"Call {phone}.") == "Call [PHONE]."
+
+
+def test_slash_dates_and_citation_ids():
+    text = "Visit 02/14/2025 [[Observation/2025-02-14]]"
+    assert Redactor().redact(text) == "Visit [DATE] [[Observation/2025-02-14]]"
 
 def test_redact_date():
     r = Redactor()

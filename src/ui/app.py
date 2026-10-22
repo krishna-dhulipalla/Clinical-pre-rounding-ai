@@ -10,100 +10,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from db.database import SessionLocal
 from db.feedback import submit_feedback
 from db.models import AuditLog
-from fhir.client import FHIRClient
+from fhir.client import FHIRClient, FHIRRequestError
+from ui.triage import _classify_fact
+from html import escape
 from main import get_fhir_base_url, run_pipeline
 
 
 def _safe_iso(value):
     return value.isoformat() if hasattr(value, "isoformat") else str(value)
-
-
-def _to_float(value):
-    try:
-        return float(str(value))
-    except (TypeError, ValueError):
-        return None
-
-
-def _contains_any(text, candidates):
-    lowered = (text or "").lower()
-    return any(token in lowered for token in candidates)
-
-
-def _classify_fact(fact):
-    name = (fact.name or "").lower()
-    value = _to_float(fact.value)
-    fact_type = fact.type.value
-
-    if fact_type == "OTHER" and "warning" in name:
-        return "critical", "Data quality warning"
-
-    if value is None:
-        return "info", "No numeric rule for this value"
-
-    if fact_type == "LAB":
-        if _contains_any(name, ["hemoglobin", "hgb"]):
-            if value < 8:
-                return "critical", "Hemoglobin critically low"
-            if value < 10:
-                return "high", "Hemoglobin below expected range"
-        if "glucose" in name:
-            if value < 54 or value > 300:
-                return "critical", "Glucose in critical range"
-            if value < 70 or value > 180:
-                return "high", "Glucose out of target range"
-        if "potassium" in name:
-            if value < 2.8 or value > 6.0:
-                return "critical", "Potassium in critical range"
-            if value < 3.2 or value > 5.5:
-                return "high", "Potassium out of target range"
-        if "sodium" in name:
-            if value < 125 or value > 155:
-                return "critical", "Sodium in critical range"
-            if value < 130 or value > 150:
-                return "high", "Sodium out of target range"
-        if "creatinine" in name and value >= 3.0:
-            return "high", "Creatinine elevated"
-        if _contains_any(name, ["white blood cell", "wbc"]) and value >= 20:
-            return "high", "WBC elevated"
-
-    if fact_type == "VITAL":
-        if _contains_any(name, ["temperature", "temp"]):
-            temp_c = value
-            unit = (fact.unit or "").lower()
-            if unit in ["degf", "f", "fahrenheit"]:
-                temp_c = (value - 32) * 5.0 / 9.0
-            if temp_c >= 39.0 or temp_c < 35.0:
-                return "critical", "Temperature in critical range"
-            if temp_c >= 38.0:
-                return "high", "Fever range temperature"
-        if _contains_any(name, ["heart rate", "pulse"]) or name.strip() == "hr":
-            if value >= 130 or value < 40:
-                return "critical", "Heart rate in critical range"
-            if value >= 110 or value < 50:
-                return "high", "Heart rate outside normal range"
-        if _contains_any(name, ["respiratory rate", "respiration"]) or name.strip() == "rr":
-            if value >= 30 or value < 8:
-                return "critical", "Respiratory rate in critical range"
-            if value >= 24 or value < 10:
-                return "high", "Respiratory rate outside normal range"
-        if _contains_any(name, ["oxygen saturation", "spo2", "o2 sat"]):
-            if value < 88:
-                return "critical", "Oxygen saturation in critical range"
-            if value < 92:
-                return "high", "Oxygen saturation below target"
-        if "systolic" in name:
-            if value >= 180 or value < 80:
-                return "critical", "Systolic pressure in critical range"
-            if value >= 160 or value < 90:
-                return "high", "Systolic pressure outside normal range"
-        if "diastolic" in name:
-            if value >= 120 or value < 50:
-                return "critical", "Diastolic pressure in critical range"
-            if value >= 100 or value < 60:
-                return "high", "Diastolic pressure outside normal range"
-
-    return "normal", "No active heuristic trigger"
 
 
 def _type_counts(facts):
@@ -294,7 +208,11 @@ with st.sidebar:
         if st.button("Refresh Patients", use_container_width=True):
             _fetch_patient_choices.clear()
 
-    patient_choices = _fetch_patient_choices(fhir_base)
+    try:
+        patient_choices = _fetch_patient_choices(fhir_base)
+    except FHIRRequestError as exc:
+        st.error(str(exc))
+        patient_choices = []
     patient_label_by_id = {item["id"]: item["label"] for item in patient_choices}
 
     if patient_choices:
@@ -314,11 +232,16 @@ with st.sidebar:
         st.warning("No patients found in FHIR. Run `python scripts/load_synthea.py`, then click Refresh Patients.")
         patient_id = st.text_input("Patient ID (manual)", value="")
 
+    if st.session_state.get("results_patient_id") != patient_id:
+        st.session_state["results"] = None
+        st.session_state["last_run_at"] = None
+
     if st.button("Generate Summary", type="primary", use_container_width=True):
         if not patient_id:
             st.error("Select a valid patient ID first.")
             st.stop()
         with st.spinner("Fetching patient data, building fact table, and generating summary..."):
+            st.session_state["results_patient_id"] = patient_id
             try:
                 st.session_state["results"] = run_pipeline(patient_id)
                 st.session_state["last_run_at"] = datetime.utcnow()
@@ -337,6 +260,8 @@ if "error" in res:
     st.stop()
 
 facts = res["facts_raw"]
+if res.get("audit_warning"):
+    st.warning(res["audit_warning"])
 annotated_facts = [_build_annotated_fact(fact, idx) for idx, fact in enumerate(facts)]
 critical_facts = [item for item in annotated_facts if item["severity"] == "critical"]
 high_facts = [item for item in annotated_facts if item["severity"] == "high"]
@@ -345,7 +270,7 @@ flagged_count = len(critical_facts) + len(high_facts)
 counts = _type_counts(facts)
 
 kpi_cols = st.columns(5)
-kpi_cols[0].markdown(f"<div class='kpi-card'><b>Patient</b><div class='kpi-value'>{res['patient_name']}</div></div>", unsafe_allow_html=True)
+kpi_cols[0].markdown(f"<div class='kpi-card'><b>Patient</b><div class='kpi-value'>{escape(res['patient_name'])}</div></div>", unsafe_allow_html=True)
 kpi_cols[1].markdown(f"<div class='kpi-card'><b>Total Facts</b><div class='kpi-value'>{len(facts)}</div></div>", unsafe_allow_html=True)
 kpi_cols[2].markdown(f"<div class='kpi-card'><b>Flagged Findings</b><div class='kpi-value'>{flagged_count}</div></div>", unsafe_allow_html=True)
 kpi_cols[3].markdown(f"<div class='kpi-card'><b>Data Quality Warnings</b><div class='kpi-value'>{len(warning_facts)}</div></div>", unsafe_allow_html=True)
@@ -411,8 +336,8 @@ with tabs[0]:
     else:
         st.caption("No priority findings detected by heuristic rules.")
 
-    with st.expander("Fact Table Sent to LLM (post-ingestion, pre-summary)"):
-        st.code(res["facts_markdown"], language="markdown")
+    with st.expander("Fact Table Sent to LLM (after regex redaction)"):
+        st.code(res["llm_facts_markdown"], language="markdown")
 
 with tabs[1]:
     st.subheader("Evidence Explorer")
@@ -514,7 +439,7 @@ with tabs[2]:
                 "source_id": fact.source_id,
             }
         )
-    rows.sort(key=lambda row: (_severity_rank(row["severity"]), row["timestamp"]))
+    rows.sort(key=lambda row: row["timestamp"], reverse=True)
     st.dataframe(rows, use_container_width=True, hide_index=True)
 
     with st.expander("Type breakdown"):
@@ -534,7 +459,7 @@ with tabs[3]:
         )
         reason = st.text_area(
             "Reason / notes",
-            value="Good" if feedback_choice == "Accurate" else "",
+            value="",
             key=f"feedback_reason_{audit_id}",
             placeholder="Describe what was wrong or missing.",
         )
@@ -551,6 +476,9 @@ with tabs[3]:
     db = SessionLocal()
     try:
         logs = db.query(AuditLog).order_by(AuditLog.timestamp.desc()).limit(history_limit).all()
+    except Exception:
+        st.warning("Audit history is unavailable. Check the database connection and run scripts/init_db.py.")
+        logs = []
     finally:
         db.close()
 

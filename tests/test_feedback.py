@@ -8,11 +8,11 @@ from db.feedback import submit_feedback
 import uuid
 from datetime import datetime
 
-def test_feedback_submission():
+def test_feedback_submission(db_session_factory):
     # Ensure tables exist
     init_db()
     
-    db = SessionLocal()
+    db = db_session_factory()
     try:
         # 1. Create a dummy log
         log_id = uuid.uuid4()
@@ -32,15 +32,11 @@ def test_feedback_submission():
         assert success is True
         
         # 3. Verify
+        db.expire_all()
         updated_log = db.query(AuditLog).filter(AuditLog.id == log_id).first()
         assert updated_log.feedback_score == 0
         assert updated_log.feedback_text == "Missed important fact"
         
         print("Feedback Test Passed!")
-    except Exception as e:
-        print(f"Feedback Test Failed: {e}")
     finally:
         db.close()
-
-if __name__ == "__main__":
-    test_feedback_submission()

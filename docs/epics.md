@@ -1,5 +1,9 @@
 # Project Epics
 
+Historical planning checklist; completion boxes have not been reconciled with
+the implementation. See [current architecture](architecture.md) and the
+[v2 proposal](v2_proposal.md) for current behavior and recommended priorities.
+
 ## 🟢 EPIC 1 — Core Infrastructure & FHIR Integration
 
 **Goal**: Create a realistic healthcare data environment.
