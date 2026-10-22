@@ -1,40 +1,53 @@
-# SMART on FHIR Setup Guide
+# SMART on FHIR sandbox setup
 
-This document outlines how to transition the **Pre-Rounding Assistant** from a local HAPI FHIR server to a production EHR environment using SMART on FHIR.
+V2 implements a public-client sandbox launch using PKCE S256. Use the [published SMART 2.2 launch flow](https://hl7.org/fhir/smart-app-launch/STU2.2/app-launch.html) and your provider's registration requirements. This is a sandbox integration, not enterprise identity certification.
 
-## Overview
+## Registration and configuration
 
-SMART on FHIR allows apps to run inside an EHR (like Epic or Cerner) using OAuth2 for authentication and authorization.
+Register the application with the chosen sandbox. Configure the exact redirect URI:
 
-## Configuration Steps
-
-### 1. Register the App
-
-- Go to the EHR Developer Portal (e.g., [Epic App Orchard](https://apporchard.epic.com/)).
-- Register "Pre-Rounding Assistant".
-- **Redirect URI**: `https://your-app.com/callback` (or `http://localhost:8501` for testing).
-- **Scopes**: `patient/Observation.read`, `patient/Encounter.read`, `launch`.
-
-### 2. Update `src/fhir/client.py`
-
-Modify `FHIRClient` to handle the OAuth2 handshake.
-
-```python
-class SmartFHIRClient(FHIRClient):
-    def __init__(self, base_url, token):
-        self.headers = {"Authorization": f"Bearer {token}"}
-        # ...
+```text
+http://localhost:8000/api/smart/callback
 ```
 
-### 3. Launch Flow
+Use HTTPS with secure cookies for a deployed environment. Generate a Fernet token-encryption key without committing it:
 
-The app will be launched from the EHR with a `launch` token.
+```powershell
+uv run python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+```
 
-1. **Launch Request**: EHR redirects to valid `launch_url`.
-2. **Auth Request**: App redirects to EHR Auth Server.
-3. **Token Exchange**: App exchanges authorization code for `access_token`.
-4. **Context**: The token response includes the `patient` ID in context.
+Set the following in your local environment or secret store:
 
-## Local Testing
+```ini
+WORKBENCH_MODE=fhir
+WORKBENCH_PUBLIC_URL=http://localhost:8000
+WORKBENCH_DATABASE_URL=postgresql://user:password@localhost:5432/workbench
+WORKBENCH_AUTO_MIGRATE=false
+WORKBENCH_SESSION_KEY=your-generated-key
+SMART_CLIENT_ID=your-registered-public-client
+SMART_FHIR_URL=https://your-sandbox.example/fhir
+SMART_AUTHORIZATION_URL=https://your-sandbox.example/authorize
+SMART_TOKEN_URL=https://your-sandbox.example/token
+```
 
-For local development without an EHR, we continue to use the Open/No-Auth HAPI FHIR server as configured in `docker-compose.yml`.
+For a local HTTP sandbox only, explicitly set `WORKBENCH_SECURE_COOKIES=false`; otherwise keep secure cookies enabled. Run the migration command before starting FHIR mode.
+
+The FHIR issuer, authorization endpoint and token endpoint are pinned configuration. Discovery must exactly match the configured endpoints and advertise S256 support. Redirected discovery/token requests are rejected. Arbitrary issuer URLs supplied in launch parameters are not accepted.
+
+## Launch
+
+For an EHR launch, register `/api/smart/launch` as the launch URL. The sandbox sends `iss` and `launch`. For a standalone sandbox flow, open `/api/smart/launch?iss=<URL-encoded configured FHIR issuer>`.
+
+The server creates five-minute browser-bound one-time state and a PKCE verifier, requests patient/encounter context and read/search access to Patient, Encounter, Observation, MedicationRequest and MedicationAdministration, and exchanges the authorization code server-side. The returned patient context is required. A returned encounter context further restricts all subsequent run access.
+
+Bearer tokens are encrypted in the session store and never returned to the frontend. Sessions expire no later than the token's reported lifetime or one hour. No refresh token is requested or stored; re-launch after expiry. Logging uses route templates, with access logs disabled to avoid recording authorization codes in callback URLs.
+
+The reviewer identity is an authorized launch-session identifier. Named clinician identity would require validated federation/identity claims and institutional authorization; this implementation does not trust an unverified ID token.
+
+## Service API alternative
+
+For a controlled FHIR API client, configure `WORKBENCH_API_TOKEN` with at least 32 random characters, `WORKBENCH_PATIENT_IDS` with an explicit comma-separated allowlist, and `WORKBENCH_FHIR_TOKEN` for the upstream server when required. Send `Authorization: Bearer <WORKBENCH_API_TOKEN>` and `X-Workbench-Request: 1` on mutation requests. This principal is not a browser login flow.
+
+## Validation boundary
+
+Automated tests mock SMART discovery and token exchange and verify PKCE parameters, browser/state binding, replay rejection, endpoint pinning, token encryption and context validation. A real launch requires your registered sandbox configuration and must be verified there. SMART authorization alone does not establish organizational access policies, auditing compliance, clinical validity or general PHI protection.

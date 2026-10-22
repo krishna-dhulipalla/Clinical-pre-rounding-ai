@@ -1,0 +1,11 @@
+{
+  "dataset_version": "synthetic-replay-v1",
+  "description": "Hand-authored synthetic engineering fixtures; not a clinical benchmark.",
+  "cases": [
+    {"id": "laboratory-changes", "patient_id": "demo-avery", "scenario": "normal", "expected_state": "completed", "expected_changes": {"Creatinine": "0.6", "Hemoglobin": "-0.3"}},
+    {"id": "stable-comparator", "patient_id": "demo-jordan", "scenario": "normal", "expected_state": "completed", "expected_changes": {"Hemoglobin": "-0.3"}},
+    {"id": "unknown-event-time", "patient_id": "demo-riley", "scenario": "normal", "expected_state": "abstained", "expected_changes": {}},
+    {"id": "observation-outage", "patient_id": "demo-avery", "scenario": "outage", "expected_state": "abstained", "expected_changes": {}},
+    {"id": "administration-access-denied", "patient_id": "demo-avery", "scenario": "denied", "expected_state": "abstained", "expected_changes": {"Creatinine": "0.6", "Hemoglobin": "-0.3"}}
+  ]
+}

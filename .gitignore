@@ -4,3 +4,15 @@ __pycache__/
 .pytest_cache/
 .venv/
 *.db
+.local/
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+output/
+.coverage
+htmlcov/
+.playwright-cli/
+*.egg-info/
+.ruff_cache/
+build/
+dist/

@@ -1,0 +1,50 @@
+services:
+  workbench:
+    build: .
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      WORKBENCH_MODE: demo
+      WORKBENCH_DATABASE_URL: postgresql://workbench:local-demo-password@postgres:5432/workbench
+      WORKBENCH_PUBLIC_URL: http://localhost:8000
+      WORKBENCH_AUTO_MIGRATE: "true"
+      WORKBENCH_EMBEDDED_WORKER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+  worker:
+    build: .
+    command: ["python", "scripts/run_workbench.py", "worker"]
+    environment:
+      WORKBENCH_MODE: demo
+      WORKBENCH_DATABASE_URL: postgresql://workbench:local-demo-password@postgres:5432/workbench
+      WORKBENCH_AUTO_MIGRATE: "false"
+    depends_on:
+      workbench:
+        condition: service_healthy
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      disable: true
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: workbench
+      POSTGRES_PASSWORD: local-demo-password
+      POSTGRES_DB: workbench
+    volumes:
+      - workbench-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U workbench -d workbench"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+volumes:
+  workbench-db:

@@ -3,8 +3,9 @@
 This is the original design brief, not an implementation status report. See
 [current architecture](architecture.md) for implemented behavior and
 [the v2 proposal](v2_proposal.md) for the recommended next version. In particular,
-time-window filtering, enforced citations, raw evidence links, complete audit
-traces, and production privacy controls described below are not implemented.
+time-window filtering, enforced citations and raw evidence links were absent
+from the original Streamlit app. See [v2 implementation status](v2_status.md)
+for the current workbench and the remaining deployment/validation boundaries.
 
 ## Vision
 

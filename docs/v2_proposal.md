@@ -1,6 +1,8 @@
 # Proposed v2: Clinical Change Intelligence Workbench
 
-Status: proposal, not implemented. The current project remains a synthetic-data summarization prototype.
+Status: design proposal now implemented as the v2 engineering demonstration. See
+[implementation status](v2_status.md) for completed capabilities and remaining
+external validation/integration work. This document preserves the original plan.
 
 ## Product direction
 
